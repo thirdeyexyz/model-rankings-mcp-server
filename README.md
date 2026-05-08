@@ -2,7 +2,7 @@
 
 An MCP server that provides real-time AI model rankings and recommendations across **text, image, video, audio, and music generation** modalities.
 
-Query it from Claude (or any MCP client) to get leaderboard data, search for models, compare options side-by-side, or get task-specific recommendations.
+Works with **any [Model Context Protocol](https://modelcontextprotocol.io) client** — Claude Desktop, Claude Code, [Msty](https://msty.app), Cursor, Continue, Zed, Cline, Goose, [LibreChat](https://docs.librechat.ai/features/mcp.html), or anything else that speaks MCP. Query it to get leaderboard data, search for models, compare options side-by-side, or get task-specific recommendations.
 
 ## Data sources
 
@@ -36,16 +36,21 @@ export ARTIFICIAL_ANALYSIS_API_KEY="your_key_here"
 export HF_TOKEN="hf_your_token_here"
 ```
 
-### 3. Connect to Claude Desktop
+### 3. Connect it to your MCP client
 
-Add to your `claude_desktop_config.json`:
+The server speaks the standard [Model Context Protocol](https://modelcontextprotocol.io) over stdio (default) or Streamable HTTP. Any MCP-compatible client can use it. Pick the section for your client:
+
+<details open>
+<summary><b>Claude Desktop</b></summary>
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows). Create the file if it doesn't exist:
 
 ```json
 {
   "mcpServers": {
     "model-rankings": {
       "command": "node",
-      "args": ["/path/to/model-rankings-mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/model-rankings-mcp-server/dist/index.js"],
       "env": {
         "ARTIFICIAL_ANALYSIS_API_KEY": "your_key_here"
       }
@@ -54,11 +59,101 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-### 4. Or run as HTTP server
+Fully quit and relaunch Claude Desktop (Cmd-Q on macOS — closing the window isn't enough).
+
+</details>
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add model-rankings \
+  --env ARTIFICIAL_ANALYSIS_API_KEY=your_key_here \
+  -- node /absolute/path/to/model-rankings-mcp-server/dist/index.js
+```
+
+Run `/mcp` inside Claude Code to confirm it's connected.
+
+</details>
+
+<details>
+<summary><b>Msty</b></summary>
+
+In Msty: **Settings → Model Context Protocol → Add MCP Server**. Choose **stdio**, then fill in:
+
+- **Name:** `model-rankings`
+- **Command:** `node`
+- **Args:** `/absolute/path/to/model-rankings-mcp-server/dist/index.js`
+- **Env:** `ARTIFICIAL_ANALYSIS_API_KEY=your_key_here`
+
+Save and toggle the server on. The tools become available to any chat that has MCP enabled.
+
+If you prefer JSON, the same config in Msty's `mcp.json` is the same shape as the Claude Desktop block above.
+
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Edit `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in a project (project-scoped):
+
+```json
+{
+  "mcpServers": {
+    "model-rankings": {
+      "command": "node",
+      "args": ["/absolute/path/to/model-rankings-mcp-server/dist/index.js"],
+      "env": { "ARTIFICIAL_ANALYSIS_API_KEY": "your_key_here" }
+    }
+  }
+}
+```
+
+Restart Cursor or toggle the server on under **Settings → MCP**.
+
+</details>
+
+<details>
+<summary><b>Zed</b></summary>
+
+Add to your Zed `settings.json`:
+
+```json
+{
+  "context_servers": {
+    "model-rankings": {
+      "command": {
+        "path": "node",
+        "args": ["/absolute/path/to/model-rankings-mcp-server/dist/index.js"],
+        "env": { "ARTIFICIAL_ANALYSIS_API_KEY": "your_key_here" }
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Continue, Cline, Goose, and other clients</b></summary>
+
+Most MCP clients accept the same shape: a `command`, `args`, and `env`. Point them at:
+
+- **Command:** `node`
+- **Args:** `["/absolute/path/to/model-rankings-mcp-server/dist/index.js"]`
+- **Env:** `ARTIFICIAL_ANALYSIS_API_KEY=your_key_here` (and optionally `HF_TOKEN`)
+
+</details>
+
+### 4. Or run as a standalone HTTP server
+
+For clients that prefer HTTP, or when you want to run the server on a remote machine:
 
 ```bash
 TRANSPORT=http PORT=3000 node dist/index.js
 ```
+
+The server then accepts MCP requests at `http://localhost:3000/mcp` over Streamable HTTP. Most modern MCP clients can connect to a URL instead of spawning a subprocess.
 
 ## Tools
 
