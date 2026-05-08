@@ -143,6 +143,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 | **Replicate** | All | Active model catalog with standardised pricing | `replicate.com/docs/reference/http` |
 | **Together AI** | Text | 200+ models, unified API, competitive pricing | `docs.together.ai` |
 | **FAL.ai** | Image / Video | Fast inference, popular with creative workflows | `fal.ai/docs` |
+| **ASCIIEval** | Text | 3,500+ samples testing how well models handle ASCII art (recognition + generation) | Academic benchmark — not yet in any live API. Paper: `arxiv.org/abs/2410.01733`. Would need a hosted leaderboard or self-run evals to integrate. |
 
 ---
 
@@ -189,12 +190,32 @@ The scorer would then match `use_case` keywords against `strengths` and boost ac
 ## PR checklist
 
 - [ ] `npm run build` passes with no errors
+- [ ] `npm run lint` passes with no errors
 - [ ] Manually tested the affected tool(s) via stdio or HTTP
 - [ ] One PR per source / feature — keep scope small
 - [ ] If you added a source: data sources table updated in `README.md`, `.env.example` updated if a key is needed
 - [ ] PR body describes what you tested and any rough edges you found
 
-No automated test suite yet — a clear description of your manual smoke-test in the PR body is enough.
+## Automated checks
+
+Every PR runs three GitHub Actions workflows:
+
+| Workflow | What it checks |
+|----------|---------------|
+| **CI / lint** | ESLint with TypeScript-strict rules — no `any`, no `!` assertions |
+| **CI / build** | TypeScript compilation on Node 20 and 22 |
+| **Smoke Test** | MCP server starts, completes the protocol handshake, and returns all expected tools |
+
+The smoke test requires no API keys — it only exercises the protocol layer and `tools/list`. If your change affects tool registration in `src/index.ts`, verify the smoke test still passes locally:
+
+```bash
+npm run build
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke-test","version":"1"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | node dist/index.js 2>/dev/null
+```
 
 ---
 

@@ -9,7 +9,7 @@ import { fetchAALeaderboard } from "../services/artificial-analysis.js";
 import { fetchHFModels } from "../services/huggingface.js";
 import { fetchORModels } from "../services/openrouter.js";
 import { fetchBenchLMLeaderboard } from "../services/benchlm.js";
-import { leaderboardToMarkdown, comparisonToMarkdown, modelToMarkdown } from "./format.js";
+import { leaderboardToMarkdown, comparisonToMarkdown, recommendToMarkdown, valueIndex } from "./format.js";
 
 interface SourceResult {
   models: RankedModel[];
@@ -231,15 +231,11 @@ export async function handleRecommend(
     };
   }
 
-  const scored = allModels.map((m) => {
+  const qualityScore = (m: typeof allModels[0]) => {
     let score = 0;
-
     if (m.elo_score != null) score += m.elo_score / 10;
     if (m.benchmark_score != null) score += m.benchmark_score * 10;
-
     switch (params.priority) {
-      case "quality":
-        break;
       case "speed":
         if (m.performance?.throughput) score += m.performance.throughput * 2;
         if (m.performance?.latency) score -= m.performance.latency / 100;
@@ -253,12 +249,21 @@ export async function handleRecommend(
         if (m.pricing?.input_cost != null) score -= m.pricing.input_cost;
         break;
     }
+    return score;
+  };
 
-    return { model: m, score };
-  });
+  const top = [...allModels]
+    .sort((a, b) => qualityScore(b) - qualityScore(a))
+    .slice(0, params.limit);
 
-  scored.sort((a, b) => b.score - a.score);
-  const top = scored.slice(0, params.limit).map((s) => s.model);
+  // Value ranking: sort by VI (Elo ÷ output cost). Models without pricing go last.
+  const topByValue = [...allModels]
+    .sort((a, b) => {
+      const va = valueIndex(a) ?? -1;
+      const vb = valueIndex(b) ?? -1;
+      return vb - va;
+    })
+    .slice(0, params.limit);
 
   if (params.response_format === "json") {
     const output = {
@@ -274,12 +279,46 @@ export async function handleRecommend(
     };
   }
 
+  const scoringNote: Record<string, string> = {
+    quality: "Elo score + benchmark score weighted heavily. Speed and cost not factored.",
+    speed: "Throughput (tok/s) and latency weighted heavily. Quality used as tiebreaker.",
+    cost: "Input and output cost per 1M tokens weighted negatively. Quality used as tiebreaker.",
+    balanced: "Equal weighting across quality (Elo/benchmark), speed (throughput), and cost.",
+  };
+
+  const sourceLinks: Record<string, string> = {
+    artificial_analysis: "[Artificial Analysis](https://artificialanalysis.ai/) — Elo from head-to-head community battles; pricing and performance from live API benchmarks",
+    huggingface: "[Hugging Face Hub](https://huggingface.co/models) — download counts and community metadata; no quality score",
+    openrouter: "[OpenRouter](https://openrouter.ai/models) — live pricing catalog for 300+ models; no quality score",
+    benchlm: "[BenchLM](https://benchlm.ai/) — automated capability scores across coding, reasoning, math, and more",
+    lmarena: "[LM Arena](https://lmarena.ai/) — community Elo from anonymous head-to-head chat battles",
+  };
+
+  const sourcesQueried = [...new Set(allModels.map((m) => m.source))];
+  const sourcesBlock = sourcesQueried.length > 0
+    ? sourcesQueried.map((s) => `- ${sourceLinks[s] ?? s}`).join("\n")
+    : "- No sources returned data";
+
   const header = [
-    `## Recommendations for: "${params.use_case}"`,
+    `## GenCurator Bulletin — "${params.use_case}"`,
     `**Modality:** ${params.modality}  |  **Priority:** ${params.priority}`,
     "",
+    `**Scoring (quality table):** ${scoringNote[params.priority] ?? ""}`,
+    `**VI (Value Index):** Elo ÷ output cost per 1M tokens — higher = more quality per dollar.`,
+    `**Energy\\*:** Estimated tier based on throughput as a proxy (high tok/s → smaller/more efficient model). Speculative — reflects provider infrastructure, not measured power draw.`,
+    "",
+    "**Data sources:**",
+    sourcesBlock,
+    "",
+    "*Data cached up to 1 hour. Rankings reflect quantitative benchmarks only — aesthetic quality and style fit are not measured.*",
+    "",
   ].join("\n");
-  const body = top.map((m, i) => modelToMarkdown(m, i + 1)).join("\n\n");
+
+  const body = [
+    recommendToMarkdown(top, "Best for quality"),
+    "",
+    recommendToMarkdown(topByValue, "Best for value (quality ÷ cost)"),
+  ].join("\n");
 
   return { content: [{ type: "text", text: appendWarnings(`${header}\n${body}`, result.warnings) }] };
 }

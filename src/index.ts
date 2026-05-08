@@ -99,9 +99,9 @@ server.registerTool(
   "ranking_recommend",
   {
     title: "Get model recommendation",
-    description: `Get a model recommendation based on your specific use case and priorities.
+    description: `Returns a ranked GenCurator Bulletin — a structured model ranking with scoring methodology, source attribution, and Value Index (VI).
 
-Describe your task in natural language and the tool will rank available models by your chosen priority (quality, speed, cost, or balanced).
+IMPORTANT: Present the tool output to the user exactly as returned. Do not paraphrase, summarise, or rewrite it. The output already contains the full bulletin with sources, scores, and methodology. You may add a one-sentence context note before or after, but preserve the bulletin structure verbatim.
 
 Args:
   - use_case: Natural language description of your task (5-500 chars)
@@ -191,6 +191,109 @@ Args:
       }],
     };
   },
+);
+
+// ── Prompt: gencurator_benchmark ───────────────────────────────
+
+server.registerPrompt(
+  "gencurator_benchmark",
+  {
+    title: "GenCurator Bulletin",
+    description: "Structured model ranking bulletin for any generative AI task — sources cited, methodology explained, Value Index included.",
+    argsSchema: {
+      task: z.string().min(5).max(500).describe(
+        "Describe what you need to generate. Be specific: include format, style, platform, or constraints. E.g. 'Photorealistic product shot on white background for e-commerce' or 'Illustration that scales from sticker to billboard, retro style'."
+      ),
+      modality: z.enum(["image", "video", "audio", "music", "text"]).optional().describe(
+        "Generation modality. Inferred from the task if omitted."
+      ),
+      priority: z.enum(["quality", "speed", "cost", "balanced"]).optional().describe(
+        "What matters most. Defaults to 'quality' if omitted."
+      ),
+    },
+  },
+  ({ task, modality, priority }) => {
+    const inferredModality = modality ?? "image";
+    const inferredPriority = priority ?? "quality";
+
+    return {
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: `Produce a structured model benchmarking report for the following task using the gencurator MCP tools.
+
+**Task:** ${task}
+**Modality:** ${inferredModality}
+**Priority:** ${inferredPriority}
+
+Follow these steps in order:
+
+1. Call \`ranking_recommend\` with use_case="${task}", modality="${inferredModality}", priority="${inferredPriority}", limit=5, response_format="json"
+2. Call \`ranking_get_leaderboard\` with modality="${inferredModality}", source="all", limit=10, response_format="json"
+3. If the top recommended models are well-known, call \`ranking_compare\` on the top 2–3 with response_format="json"
+
+Then write the report in exactly this structure:
+
+---
+
+## GenCurator Bulletin
+
+**Task:** ${task}
+**Modality:** ${inferredModality} | **Priority:** ${inferredPriority}
+**Data:** [note whether data is live or cached, and which sources responded]
+
+---
+
+### Methodology
+
+- Which sources responded and which were skipped or returned warnings
+- What the priority "${inferredPriority}" means in scoring terms (quality = Elo + benchmark score weighted heavily; speed = throughput + latency; cost = price per unit; balanced = equal weights)
+- What the ranking does NOT capture: subjective aesthetics, style consistency across seeds, community reputation, fine-tune ecosystem
+
+---
+
+### Top Recommendations
+
+For each of the top 3–5 models:
+
+**#N — Model Name** \`source\`
+- **Why it ranks here:** link the model's actual scores to the task requirements
+- **Elo / benchmark score:** value or "not available"
+- **Pricing:** cost per unit or "not available"
+- **Performance:** throughput / latency if relevant
+- **Watch out for:** one honest limitation specific to this task
+
+---
+
+### Head-to-Head Comparison
+
+Include the ranking_compare table here if available.
+
+---
+
+### Data Sources
+
+| Source | Status | Contribution |
+|--------|--------|--------------|
+| Artificial Analysis | [OK / skipped / warning] | Elo, pricing, latency |
+| Hugging Face | [OK / skipped / warning] | Open model metadata |
+| OpenRouter | [OK / skipped / warning] | Live pricing, 300+ models |
+| BenchLM | [OK / skipped / warning] | Capability category scores |
+
+---
+
+### Caveats
+
+- Rankings are based on quantitative data only — they do not reflect aesthetic quality or style fit for your specific brief.
+- Data is cached for up to 1 hour. Use \`ranking_cache_status\` with action="clear" to force fresh data.
+- Missing sources mean their models are absent from this ranking.`,
+          },
+        },
+      ],
+    };
+  }
 );
 
 // ── Transport selection ─────────────────────────────────────────

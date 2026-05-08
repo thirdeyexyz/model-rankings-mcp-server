@@ -1,0 +1,36 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: MCP server responds to initialize and tools/list
+        run: |
+          output=$(printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke-test","version":"1"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+            | node dist/index.js 2>/dev/null)
+          echo "$output"
+          echo "$output" | grep -q '"ranking_get_leaderboard"' || (echo "FAIL: ranking_get_leaderboard not in tools/list" && exit 1)
+          echo "$output" | grep -q '"ranking_recommend"' || (echo "FAIL: ranking_recommend not in tools/list" && exit 1)
+          echo "OK: all expected tools present"
