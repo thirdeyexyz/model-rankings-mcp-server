@@ -23,7 +23,7 @@ import { cacheClear, cacheStats } from "./services/cache.js";
 // ── Server setup ────────────────────────────────────────────────
 
 const server = new McpServer({
-  name: "model-rankings-mcp-server",
+  name: "gencurator-mcp",
   version: "1.0.0",
 });
 
